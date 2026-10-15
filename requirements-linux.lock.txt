@@ -1,0 +1,31 @@
+# Reference-only environment lock, NOT consumed by the package build.
+# The authoritative runtime dependencies live in pyproject.toml and are
+# installed automatically by `pip install powermonitor-hvpm`.
+#
+# Captured on Linux x86_64 / Python 3.10 (Ubuntu 22.04, glibc 2.35) for a
+# developer environment that includes the pyproject `test` extra. macOS needs
+# its own validation and lock. The vendored Monsoon SDK uses pyusb only, so
+# scipy and the libusb1 Python binding (pulled in by the old upstream
+# setup.py) are no longer present; the system libusb-1.0 shared library is
+# still required for real hardware and is provided by the OS, not pip.
+colorama==0.4.6
+exceptiongroup==1.3.1
+iniconfig==2.3.1
+numpy==2.2.6
+nodeenv==1.11.0
+pyright==1.1.414
+packaging==26.3
+pluggy==1.6.0
+psutil==7.2.2
+Pygments==2.21.0
+pyqtgraph==0.14.0
+PySide6==6.8.3
+PySide6_Addons==6.8.3
+PySide6_Essentials==6.8.3
+pytest==9.1.1
+pytest-qt==4.5.0
+pyusb==1.3.1
+ruff==0.17.0
+shiboken6==6.8.3
+tomli==2.5.0
+typing_extensions==4.16.0

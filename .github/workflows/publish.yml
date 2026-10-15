@@ -1,0 +1,70 @@
+name: Publish to PyPI
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+env:
+  QT_QPA_PLATFORM: offscreen
+  QT_API: pyside6
+
+jobs:
+  build:
+    name: Build and verify release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name }}
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: '0.9.7'
+          enable-cache: true
+          python-version: '3.13'
+      - name: Verify tag matches project version
+        shell: bash
+        run: |
+          version=$(python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')
+          test "${{ github.event.release.tag_name }}" = "v${version}"
+      - name: Install locked release tools
+        run: uv sync --locked --group release
+      - name: Build wheel and source distribution
+        run: uv build
+      - name: Validate distributions
+        run: |
+          uv run --group release twine check --strict dist/*
+          uv run python tools/check_distribution.py dist
+      - name: Smoke test release wheel
+        shell: bash
+        run: |
+          python -m venv release-smoke
+          release-smoke/bin/python -m pip install --upgrade pip
+          release-smoke/bin/python -m pip install dist/*.whl
+          release-smoke/bin/python -m pip check
+          release-smoke/bin/powermonitor --help
+          release-smoke/bin/python -c 'import importlib.util; assert importlib.util.find_spec("Monsoon") is None; import powermonitor._vendor.pymonsoon'
+          release-smoke/bin/powermonitor --screenshot release-smoke.png
+          test -s release-smoke.png
+      - uses: actions/upload-artifact@v4
+        with:
+          name: distributions
+          path: dist/
+          if-no-files-found: error
+
+  publish:
+    name: Publish distributions
+    needs: build
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: distributions
+          path: dist
+      - uses: pypa/gh-action-pypi-publish@release/v1

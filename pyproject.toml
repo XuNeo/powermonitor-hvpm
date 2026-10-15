@@ -1,0 +1,84 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "powermonitor-hvpm"
+version = "0.1.0"
+description = "Offline-first Monsoon HVPM desktop capture and analysis"
+readme = "README.md"
+requires-python = ">=3.10,<3.14"
+license = "MIT"
+license-files = ["LICENSE", "THIRD_PARTY_NOTICES.md"]
+authors = [{ name = "XuNeo" }]
+keywords = [
+  "monsoon",
+  "hvpm",
+  "power-monitor",
+  "power-measurement",
+  "embedded",
+  "current-sensing",
+  "pyside6",
+]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Environment :: X11 Applications :: Qt",
+  "Intended Audience :: Developers",
+  "Operating System :: POSIX :: Linux",
+  "Operating System :: MacOS :: MacOS X",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Scientific/Engineering :: Electronic Design Automation (EDA)",
+  "Topic :: System :: Hardware :: Hardware Drivers",
+]
+dependencies = [
+  "numpy>=1.25,<3",
+  "PySide6==6.8.3",
+  "pyqtgraph==0.14.0",
+  "pyusb>=1.3,<2",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=8,<10", "pytest-qt>=4.4,<5", "psutil>=6", "ruff>=0.9", "pyright>=1.1"]
+
+[dependency-groups]
+release = [
+  "build>=1.2,<2",
+  "twine>=5,<7",
+]
+
+[project.urls]
+Homepage = "https://github.com/XuNeo/powermonitor-hvpm"
+Repository = "https://github.com/XuNeo/powermonitor-hvpm"
+Issues = "https://github.com/XuNeo/powermonitor-hvpm/issues"
+Changelog = "https://github.com/XuNeo/powermonitor-hvpm/releases"
+
+[project.scripts]
+powermonitor = "powermonitor.app:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"powermonitor._vendor.pymonsoon" = ["LICENSE.txt"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+qt_api = "pyside6"
+markers = ["performance: extended performance checks", "sdk: tests against the pinned official SDK"]
+
+[tool.pyright]
+venvPath = "."
+venv = ".venv"
+include = ["src", "tests", "tools"]
+extraPaths = ["src"]
+pythonVersion = "3.10"
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]

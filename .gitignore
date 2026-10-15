@@ -1,0 +1,40 @@
+# Python virtual environments
+.venv/
+build/nohw-venv/
+
+# Byte-compiled / packaging artifacts
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+release-dist/
+wheels/
+
+# Test / type / lint caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.pyright/
+.coverage
+htmlcov/
+
+# Crash / core dumps
+core
+core.[0-9]*
+*.core
+
+# Local runtime outputs
+artifacts/
+*.pmcap/
+
+# Temporary screenshots and captures
+*.png
+*.jpg
+*.jpeg
+*.tmp
+*~
+
+# OS / editor cruft
+.DS_Store

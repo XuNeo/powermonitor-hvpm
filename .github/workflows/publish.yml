@@ -29,6 +29,8 @@ jobs:
         run: |
           version=$(python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')
           test "${{ github.event.release.tag_name }}" = "v${version}"
+      - name: Install Linux Qt runtime
+        run: sudo apt-get update && sudo apt-get install --yes libegl1
       - name: Install locked release tools
         run: uv sync --locked --group release
       - name: Build wheel and source distribution

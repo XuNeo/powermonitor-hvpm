@@ -39,6 +39,9 @@ jobs:
           version: '0.9.7'
           enable-cache: true
           python-version: ${{ matrix.python-version }}
+      - name: Install Linux Qt runtime
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install --yes libegl1
       - name: Install locked dependencies
         run: uv sync --locked --extra test --group release
       - name: Check installed dependencies
@@ -84,6 +87,9 @@ jobs:
         with:
           name: distributions
           path: dist
+      - name: Install Linux Qt runtime
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install --yes libegl1
       - uses: actions/setup-python@v5
         with:
           python-version: '3.13'

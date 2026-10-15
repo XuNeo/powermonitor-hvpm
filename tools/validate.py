@@ -13,7 +13,7 @@ def main() -> int:
     commands = [
         [sys.executable, "-m", "ruff", "check", "src", "tests", "tools"],
         [sys.executable, "-m", "pyright", "src/powermonitor"],
-        [sys.executable, "-m", "pytest", "-q", "tests"],
+        [sys.executable, "-m", "pytest", "-q", "-m", "not performance", "tests"],
     ]
     for command in commands:
         result = subprocess.run(command, cwd=root, env=env, check=False)

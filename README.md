@@ -111,13 +111,19 @@ uv run python -m powermonitor --open 录制目录
 - 同一列内若被 GAP_BEFORE、超过 0.2 ms 容差的时间跳变、NaN/Inf 或 INVALID/DEVICE_ERROR 标记分开，会拆成独立聚合组，趋势线和包络都不跨缺口；LOSS_UNKNOWN 不隐藏当前值。首尾部分列只按实际落入样本计算，空列不画。
 - 主线和包络都显式关闭 pyqtgraph 的 peak 二次降采样和视口裁剪；缩放或平移后按新的原始视口重新聚合，而不是放大旧包络。因此缩小视图是“平均趋势 + 真实范围”，放大后自动看到全部原始点，不再把每个抽取桶的 min/max 极值按时间连成原始信号中不存在的锯齿折线。图下常显平均电流/功率；完整统计与原始表格分别在 Statistics / Raw samples。STOP 只停采集，OFF 单独关断；录制路径始终显示，结束后自动回放，未主动删除录制。
 
-无硬件验证用统一入口（自动设置 offscreen Qt 平台，顺序执行 ruff、应用源码 Pyright、pytest；依赖一致性另由 `uv pip check` 验证）：
+无硬件验证用统一入口（自动设置 offscreen Qt 平台，顺序执行 ruff、应用源码 Pyright、排除性能阈值项的稳定 pytest；依赖一致性另由 `uv pip check` 验证）：
 
 ```sh
 uv run python tools/validate.py
 ```
 
-该入口包含离屏 Qt 交互测试；原生 X11 窗口的端到端验证命令如下（需 Xvfb 及 Qt X11 依赖）：
+刷新耗时阈值依赖主机负载，单独执行：
+
+```sh
+QT_QPA_PLATFORM=offscreen uv run pytest -q -m performance
+```
+
+稳定入口包含离屏 Qt 交互测试；原生 X11 窗口的端到端验证命令如下（需 Xvfb 及 Qt X11 依赖）：
 
 ```sh
 QT_QPA_PLATFORM=xcb xvfb-run -a -s '-screen 0 1440x1100x24' \

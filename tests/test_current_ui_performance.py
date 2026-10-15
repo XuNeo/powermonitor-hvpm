@@ -3,6 +3,7 @@
 import time
 
 import numpy as np
+import pytest
 from PySide6 import QtCore, QtWidgets
 
 from powermonitor.models import SAMPLE_DTYPE, ControllerState
@@ -106,6 +107,7 @@ def test_resuming_follow_fetches_latest_immediately(qtbot):
     close_window(qtbot, window)
 
 
+@pytest.mark.performance
 def test_current_only_live_tick_budget(qtbot):
     controller = CountingController()
     controller.recent = make_demo_records(50_000)

@@ -38,7 +38,7 @@ class AcquisitionController:
     ) -> None:
         self._backend_factories = backend_factories or {
             "simulator": SimulatorBackend,
-            "monsoon": MonsoonBackend,
+            "monsoon": lambda: MonsoonBackend(reset_on_close=False),
         }
         self._writer_factory = writer_factory
         self._commands: queue.Queue[tuple[str, dict[str, Any]]] = queue.Queue()

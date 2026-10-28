@@ -1,5 +1,9 @@
 import threading
 import time
+from types import SimpleNamespace
+from unittest.mock import Mock
+
+import pytest
 
 from powermonitor.acquisition import AcquisitionController
 from powermonitor.backends.simulator import SimulatorBackend
@@ -356,3 +360,39 @@ def test_shutdown_success_does_not_claim_output_off():
     assert controller.shutdown()
     assert controller.state.output == "unknown"
     assert controller.state.connection == "disconnected"
+
+
+@pytest.mark.parametrize("cleanup", ["disconnect", "shutdown"])
+def test_default_monsoon_factory_uses_capture_safe_cleanup(monkeypatch, cleanup):
+    from powermonitor.backends.monsoon import MonsoonBackend
+
+    handle = Mock()
+    device = Mock()
+    device.Protocol = SimpleNamespace(DEVICE=handle)
+    device.statusPacket = SimpleNamespace(
+        hardwareModel=2, serialNumber=101, firmwareVersion=32
+    )
+    factory = Mock(
+        side_effect=lambda **options: MonsoonBackend(
+            device_factory=lambda: device, engine_factory=lambda _: None, **options
+        )
+    )
+    dispose = Mock()
+    monkeypatch.setattr("powermonitor.acquisition.MonsoonBackend", factory)
+    monkeypatch.setattr("usb.util.dispose_resources", dispose)
+    controller = AcquisitionController()
+    try:
+        controller.request("connect", backend="monsoon")
+        wait_for(controller, lambda state: state.connection == "connected")
+        factory.assert_called_once_with(reset_on_close=False)
+        if cleanup == "disconnect":
+            controller.request("disconnect")
+            wait_for(controller, lambda state: state.connection == "disconnected")
+        else:
+            assert controller.shutdown()
+        dispose.assert_called_once_with(handle)
+        device.closeDevice.assert_not_called()
+        handle.reset.assert_not_called()
+        device.setVout.assert_not_called()
+    finally:
+        assert controller.shutdown()

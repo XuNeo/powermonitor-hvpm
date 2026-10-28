@@ -79,6 +79,7 @@ class MonsoonBackend:
         *,
         device_factory: Callable[[], Any] | None = None,
         engine_factory: Callable[[Any], Any] | None = None,
+        reset_on_close: bool = True,
         no_data_timeout_s: float = 5.0,
         startup_timeout_s: float = 15.0,
         batch_samples: int = 250,
@@ -92,6 +93,7 @@ class MonsoonBackend:
             engine_factory = engine_factory or sampleEngine.SampleEngine
         self._device_factory = device_factory
         self._engine_factory = engine_factory
+        self._reset_on_close = reset_on_close
         if no_data_timeout_s <= 0 or startup_timeout_s <= 0 or batch_samples < 1:
             raise ValueError("Sampling deadlines and batch size must be positive")
         self._no_data_timeout_s = no_data_timeout_s
@@ -152,7 +154,7 @@ class MonsoonBackend:
         if device is None:
             return
         try:
-            device.closeDevice()
+            self._close_device(device)
         except Exception as exc:
             raise BackendError(f"Unable to close Monsoon device: {exc}") from exc
         self._device = None
@@ -354,12 +356,21 @@ class MonsoonBackend:
             raise BackendError("Monsoon device is not connected")
         return self._device
 
-    @staticmethod
-    def _best_effort_close(device: Any) -> None:
+    def _close_device(self, device: Any) -> None:
         protocol = getattr(device, "Protocol", None)
-        if protocol is None or getattr(protocol, "DEVICE", None) is None:
+        handle = getattr(protocol, "DEVICE", None)
+        if handle is None:
             return
-        try:
+        if self._reset_on_close:
             device.closeDevice()
+        else:
+            # The SDK close path resets USB; capture must only release host resources.
+            from usb.util import dispose_resources
+
+            dispose_resources(handle)
+
+    def _best_effort_close(self, device: Any) -> None:
+        try:
+            self._close_device(device)
         except Exception:
             pass

@@ -123,6 +123,16 @@ powermonitor --open /path/to/capture.pmcap
 7. 点击 **STOP** 停止采集；STOP 不会自动关闭电源输出。
 8. 测量结束后点击 **OFF** 关闭输出。
 
+### 断开连接与退出
+
+应用在断开 HVPM 或退出时只释放主机侧 USB 资源，不调用 SDK 的 USB reset。
+停止采集仍会发送停止采样命令；由应用开启的输出仍会在断开或退出时尝试关闭。
+这不是“退出后保持应用开启的电源输出”功能。
+
+直接使用 Python 后端时，`MonsoonBackend()` 保留 SDK 默认关闭行为；传入
+`reset_on_close=False` 才会使用不 reset USB 的清理路径。该路径的重复连接与
+bulk endpoint 释放行为仍需在目标 HVPM、操作系统和 libusb 组合上实机验证。
+
 ### 模拟模式
 
 默认启动时使用 Simulator 后端。模拟器不会访问 USB，也不会控制任何物理电源输出，可用于熟悉界面、波形操作、统计和导出功能。

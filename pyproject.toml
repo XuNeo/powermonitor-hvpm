@@ -57,7 +57,7 @@ Issues = "https://github.com/XuNeo/powermonitor-hvpm/issues"
 Changelog = "https://github.com/XuNeo/powermonitor-hvpm/releases"
 
 [project.scripts]
-powermonitor = "powermonitor.app:main"
+powermonitor = "powermonitor.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

@@ -23,7 +23,10 @@ class _Application(Protocol):
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Monsoon HVPM desktop capture and replay UI")
+    parser = argparse.ArgumentParser(
+        description="Monsoon HVPM desktop capture and replay UI",
+        epilog="Terminal mode: powermonitor live --help (no GUI, output unchanged)",
+    )
     parser.add_argument(
         "--demo",
         action="store_true",

@@ -11,6 +11,11 @@ from pathlib import Path
 
 EXPECTED_NAME = "powermonitor-hvpm"
 EXPECTED_VERSION = "0.1.0"
+LIVE_MODULES = {
+    "powermonitor/cli.py",
+    "powermonitor/live.py",
+    "powermonitor/backends/sampling.py",
+}
 VENDORED_FILES = {
     "HVPM.py",
     "Operations.py",
@@ -52,14 +57,18 @@ def _check_wheel(path: Path) -> None:
             "wheel entry_points.txt file",
         )
         entry_points = archive.read(str(entry_points_name)).decode()
-        if "powermonitor = powermonitor.app:main" not in entry_points:
+        if "powermonitor = powermonitor.cli:main" not in entry_points:
             raise RuntimeError("Wheel does not provide the powermonitor command")
+
+        missing_live = LIVE_MODULES - set(names)
+        if missing_live:
+            raise RuntimeError(
+                f"Wheel is missing terminal sampling modules: {sorted(missing_live)}"
+            )
 
         vendor_prefix = "powermonitor/_vendor/pymonsoon/"
         packaged_vendor = {
-            name.removeprefix(vendor_prefix)
-            for name in names
-            if name.startswith(vendor_prefix)
+            name.removeprefix(vendor_prefix) for name in names if name.startswith(vendor_prefix)
         }
         missing = VENDORED_FILES - packaged_vendor
         if missing:
@@ -77,6 +86,7 @@ def _check_sdist(path: Path) -> None:
         "README.md",
         "LICENSE",
         "THIRD_PARTY_NOTICES.md",
+        *(f"src/{name}" for name in LIVE_MODULES),
         *(f"src/powermonitor/_vendor/pymonsoon/{name}" for name in VENDORED_FILES),
     }
     with tarfile.open(path, "r:gz") as archive:

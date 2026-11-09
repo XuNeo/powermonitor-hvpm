@@ -74,9 +74,7 @@ def test_scan_never_connects_samples_or_controls_power(backend, capsys):
         (("36612",), "Found 1 device:\n  36612  Monsoon HVPM (monsoon)\n"),
         (
             ("36612", "36613"),
-            "Found 2 devices:\n"
-            "  36612  Monsoon HVPM (monsoon)\n"
-            "  36613  Monsoon HVPM (monsoon)\n",
+            "Found 2 devices:\n  36612  Monsoon HVPM (monsoon)\n  36613  Monsoon HVPM (monsoon)\n",
         ),
     ],
 )
@@ -149,33 +147,42 @@ def test_absent_serial_fails_before_power(backend):
 
 
 @pytest.mark.parametrize("action", ["on", "off"])
-def test_noninteractive_power_requires_yes(action, backend, monkeypatch, capsys):
-    monkeypatch.setattr(sys.stdin, "isatty", lambda: False)
-    args = ["output", action, "--backend", "simulator"]
+@pytest.mark.parametrize("terminal", [False, True])
+@pytest.mark.parametrize("legacy_yes", [False, True])
+def test_power_command_executes_without_reading_confirmation(
+    action, terminal, legacy_yes, backend, monkeypatch, capsys
+):
+    class UnreadableInput:
+        def isatty(self):
+            return terminal
+
+        def readline(self):
+            pytest.fail("Explicit output command must not request confirmation")
+
+    monkeypatch.setattr(sys, "stdin", UnreadableInput())
+    args = ["output", action, "--backend", "simulator", "--json"]
     if action == "on":
-        args += ["--voltage", "3.3"]
-    assert commands.main(args) == 1
-    assert "requires --yes" in capsys.readouterr().err
-    assert "off" not in backend.calls
-    assert not any(isinstance(call, tuple) and call[0] == "voltage" for call in backend.calls)
-
-
-@pytest.mark.parametrize("answer,code", [("ON 3.30\n", 0), ("yes\n", 1)])
-def test_interactive_voltage_confirmation(answer, code, backend, monkeypatch, capsys):
-    import io
-
-    stream = io.StringIO(answer)
-    stream.isatty = lambda: True
-    monkeypatch.setattr(sys, "stdin", stream)
-    assert (
-        commands.main(["output", "on", "--voltage", "3.3", "--backend", "simulator", "--json"])
-        == code
-    )
+        args += ["--voltage", "4.0"]
+    if legacy_yes:
+        args += ["--yes"]
+    assert commands.main(args) == 0
     result = capsys.readouterr()
-    assert "type ON 3.30" in result.err
-    if code == 0:
-        assert json.loads(result.out)["configured_voltage_v"] == 3.3
-    assert backend.output_enabled == (code == 0)
+    assert result.err == ""
+    assert json.loads(result.out)["configured_voltage_v"] == (4.0 if action == "on" else 0.0)
+    assert backend.calls == [
+        "scan",
+        ("connect", "TEST"),
+        ("voltage", 4.0) if action == "on" else "off",
+        "disconnect",
+    ]
+    assert backend.output_enabled == (action == "on")
+
+
+def test_power_help_has_no_confirmation_requirement(capsys):
+    with pytest.raises(SystemExit) as exc:
+        commands.main(["output", "on", "--help"])
+    assert exc.value.code == 0
+    assert "--yes" not in capsys.readouterr().out
 
 
 @pytest.mark.parametrize("value", ["nan", "inf", "0", "13.51", "3.301"])
@@ -409,6 +416,24 @@ def run_cli(args, tmp_path):
         text=True,
         timeout=10,
     )
+
+
+@pytest.mark.parametrize("action", ["on", "off"])
+def test_installed_power_command_needs_no_stdin(action, tmp_path):
+    args = ["output", action, "--backend", "simulator", "--json"]
+    if action == "on":
+        args += ["--voltage", "4.00"]
+    result = subprocess.run(
+        [sys.executable, "-I", "-m", "powermonitor", *args],
+        cwd=tmp_path,
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stderr == ""
+    assert json.loads(result.stdout)["configured_voltage_v"] == (4.0 if action == "on" else 0.0)
 
 
 def test_installed_headless_workflow_capture_stats_export(tmp_path):

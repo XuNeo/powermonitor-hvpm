@@ -142,8 +142,8 @@ bulk endpoint 释放行为仍需在目标 HVPM、操作系统和 libusb 组合�
 ```sh
 powermonitor scan --json
 powermonitor status --serial SERIAL --json
-powermonitor output off --serial SERIAL --yes
-powermonitor output on --serial SERIAL --voltage 3.30 --yes
+powermonitor output off --serial SERIAL
+powermonitor output on --serial SERIAL --voltage 3.30
 powermonitor capture --serial SERIAL --seconds 30 --out boot.pmcap --json
 ```
 
@@ -155,7 +155,8 @@ powermonitor capture --serial SERIAL --seconds 30 --out boot.pmcap --json
 - `output on` 必须明确指定电压（0.80..13.50 V，0.01 V 步进），开启前必须读回 OFF 配置。
   已有非零配置时拒绝改压，要求先单独执行 `output off`；不会隐藏断电或热切换。
   写入后校验配置读回，不自动重试。通信失败意味着实际输出状态未知。
-- `output on/off` 默认要求终端输入准确的 `ON 3.30` 或 `OFF`；脚本必须显式传 `--yes`。
+- `output on/off` 命令本身即表示操作意图，直接执行，不要求额外交互确认或 `--yes`。
+  旧脚本中的 `--yes` 仍可接受，但不再有作用；GUI 的使能确认保持不变。
   成功退出只释放主机 USB 资源，不 reset、不反向操作输出；**on 后供电设置保持**。
   这与 GUI 关闭由自身开启的输出策略不同。
 - `capture` 保持已有输出不变，保存全部原始样本到新 `.pmcap` 目录，不自动导出 CSV。

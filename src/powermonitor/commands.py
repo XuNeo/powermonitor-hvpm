@@ -48,7 +48,8 @@ def parser() -> argparse.ArgumentParser:
             "--json", action="store_true", help="machine-readable result on stdout"
         )
     for command in (on, off):
-        command.add_argument("--yes", action="store_true", help="explicitly confirm power change")
+        # Accept older scripts without requiring or advertising a confirmation flag.
+        command.add_argument("--yes", action="store_true", help=argparse.SUPPRESS)
     info = sub.add_parser("info", help="read recording metadata and data-quality warnings")
     stats = sub.add_parser("stats", help="compute original-sample window statistics")
     export = sub.add_parser("export", help="export original samples to a new CSV")
@@ -122,22 +123,6 @@ def select_device(backend: Backend, serial: str | None) -> str:
     if len(devices) != 1:
         raise BackendError("Exactly one device is required without --serial")
     return devices[0].serial
-
-
-def confirm(args: argparse.Namespace, device: DeviceInfo) -> None:
-    phrase = f"ON {args.voltage:.2f}" if args.action == "on" else "OFF"
-    if args.yes:
-        return
-    if not sys.stdin.isatty():
-        raise BackendError("Power change requires --yes in non-interactive use")
-    print(
-        f"HVPM {device.serial}: type {phrase} to change main output: ",
-        file=sys.stderr,
-        end="",
-        flush=True,
-    )
-    if sys.stdin.readline().strip() != phrase:
-        raise BackendError("Confirmation mismatch; no power command sent")
 
 
 def record(
@@ -287,7 +272,6 @@ def hardware(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
                         assert isinstance(backend, ControlMonsoonBackend)
                         result = backend.read_status()
                     return result, SUCCESS
-                confirm(args, device)
                 if args.action == "on":
                     backend.set_voltage(args.voltage)
                 else:

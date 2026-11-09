@@ -364,35 +364,54 @@ def test_shutdown_success_does_not_claim_output_off():
 
 @pytest.mark.parametrize("cleanup", ["disconnect", "shutdown"])
 def test_default_monsoon_factory_uses_capture_safe_cleanup(monkeypatch, cleanup):
-    from powermonitor.backends.monsoon import MonsoonBackend
+    from powermonitor.backends.locked import LockedMonsoonBackend
 
     handle = Mock()
     device = Mock()
     device.Protocol = SimpleNamespace(DEVICE=handle)
-    device.statusPacket = SimpleNamespace(
-        hardwareModel=2, serialNumber=101, firmwareVersion=32
-    )
+    device.statusPacket = SimpleNamespace(hardwareModel=2, serialNumber=101, firmwareVersion=32)
     factory = Mock(
-        side_effect=lambda **options: MonsoonBackend(
+        side_effect=lambda **options: LockedMonsoonBackend(
             device_factory=lambda: device, engine_factory=lambda _: None, **options
         )
     )
     dispose = Mock()
-    monkeypatch.setattr("powermonitor.acquisition.MonsoonBackend", factory)
+    lease = Mock()
+    monkeypatch.setattr("powermonitor.backends.locked.HardwareLease", lambda: lease)
+    device.enumerateDevices.return_value = [101]
+    monkeypatch.setattr("powermonitor.acquisition.LockedMonsoonBackend", factory)
     monkeypatch.setattr("usb.util.dispose_resources", dispose)
     controller = AcquisitionController()
     try:
         controller.request("connect", backend="monsoon")
         wait_for(controller, lambda state: state.connection == "connected")
-        factory.assert_called_once_with(reset_on_close=False)
+        factory.assert_called_once_with()
+        lease.acquire.assert_called_once()
         if cleanup == "disconnect":
             controller.request("disconnect")
             wait_for(controller, lambda state: state.connection == "disconnected")
         else:
             assert controller.shutdown()
         dispose.assert_called_once_with(handle)
+        lease.release.assert_called_once()
         device.closeDevice.assert_not_called()
         handle.reset.assert_not_called()
         device.setVout.assert_not_called()
     finally:
         assert controller.shutdown()
+
+
+def test_shutdown_retains_failed_session_for_hardware_lease_lifetime():
+    from powermonitor.backends.base import BackendError
+
+    class CloseFail(SimulatorBackend):
+        def disconnect(self):
+            raise BackendError("close failed")
+
+    backend = CloseFail()
+    controller = AcquisitionController(backend_factories={"simulator": lambda: backend})
+    controller.request("connect")
+    wait_for(controller, lambda state: state.connection == "connected")
+    assert controller.shutdown()
+    assert controller._backend is backend
+    assert controller.state.connection == "error"

@@ -84,3 +84,17 @@
 - `delivery-wheel/`：包含最后绘图修复的 wheel；`wheel-demo.png` 为此前同一包装方式的运行截图
 
 复测命令见 README 和 `tools/benchmark.py`、`tools/benchmark_sdk.py`、`tools/benchmark_plot.py`、`tools/gui_smoke.py`。所有 benchmark 使用合成数据，不访问真实 USB。
+
+## 2026-11-05 命令行工作流
+
+- 先将终端 `live` 迁移提交 `7acf4c2` cherry-pick 到主仓库；旧 worktree 已删除。
+- 新增 `scan/status/output on/output off/capture/info/stats/export`，保留默认 GUI 入口；CLI 不加载 Qt。
+- 供电命令明确确认、必填电压、开启前配置 OFF 读回、写后配置读回，不自动重试或退出反向关断。
+  配置读回不代表测量电压或实际物理输出，输出状态未知时保持未知。
+- CLI 与 GUI 使用相同 hwlock 协作资源；测试覆盖锁冲突、超时、进程死亡释放、工作线程使用与清理顺序。
+- ruff、pyright、373 项常规测试及 2 项性能测试通过；GUI offscreen smoke 保存 24,000 样本，STOP 约 87 ms。
+- wheel/sdist 构建、distribution 检查、twine 检查通过；wheel 在仅安装 numpy/pyusb、无 Qt 的虚拟环境中完成全部 CLI 模拟工作流。
+- 实机 HVPM 36612 / firmware 32 的扫描、状态读回、3 秒录制和离线统计通过；保存 14,804 个样本。
+  前后配置电压均为 0 V，实际采样电压约 4.74 V，设备未知丢样告警保留；未发送电源写命令。
+- 供电 on/off、非零配置读回和退出保持尚未实机验证，必须先确认 DUT 保护条件和安全测试电压。
+  未实现高级限流/USB passthrough 写控制、交互会话、测试编排、设备 reset、校准或常驻服务。

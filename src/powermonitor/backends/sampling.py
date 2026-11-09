@@ -16,12 +16,13 @@ class _SamplingDevice(HVPM.Monsoon):
             raise BackendError("Sampling requires a fresh, internal USB protocol")
         # Retain a fresh protocol before Connect: even a partial failure must be
         # cleaned up without the SDK's shared default protocol or close/reset.
+        self.statusPacket = Operations.statusPacket()
         self.Protocol = pmapi.USB_protocol()
         self.Protocol.Connect(Operations.HardwareModel.HVPM, serialno)
 
 
-class SamplingOnlyMonsoonBackend(MonsoonBackend):
-    """Reuse the pinned sampler but forbid power commands and reset cleanup."""
+class HostCleanupMonsoonBackend(MonsoonBackend):
+    """Fresh USB connection and host-only cleanup for explicit device control."""
 
     def __init__(
         self,
@@ -62,6 +63,10 @@ class SamplingOnlyMonsoonBackend(MonsoonBackend):
         if self._sampling or self._engine is not None:
             raise BackendError("Cannot disconnect while sampling; stop sampling first")
         super().disconnect()
+
+
+class SamplingOnlyMonsoonBackend(HostCleanupMonsoonBackend):
+    """Use the pinned sampler without granting any power-control capability."""
 
     def set_voltage(self, voltage_v: float) -> None:
         raise BackendError("Output voltage control is forbidden in the sampling backend")

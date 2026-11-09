@@ -267,33 +267,22 @@ def test_missing_hwlock_fails_without_hardware_access(monkeypatch, capsys):
     assert "requires hwlock" in capsys.readouterr().err
 
 
-def test_lock_wrapper_forwards_module_arguments_and_restores_signals(monkeypatch, capsys):
-    monkeypatch.setattr(live.shutil, "which", lambda _: "/usr/bin/hwlock")
+def test_live_holds_lease_until_monitor_cleanup(monkeypatch):
     calls = []
-    before = {sig: signal.getsignal(sig) for sig in (signal.SIGINT, signal.SIGTERM)}
 
-    def execv(path, args):
-        calls.append((path, args))
-        assert all(signal.getsignal(sig) == signal.SIG_IGN for sig in before)
-        raise OSError("exec failed")
+    class Lease:
+        def __enter__(self):
+            calls.append("lock")
 
-    monkeypatch.setattr(live.os, "execv", execv)
-    monkeypatch.setattr(live, "make_backend", lambda _: pytest.fail("must not connect unlocked"))
-    assert live.main(["--serial", "123", "--plain"]) == 1
-    assert "exec failed" in capsys.readouterr().err
-    args = calls[0][1]
-    assert args[2:4] == ["--resource", "monsoon-hvpm"]
-    assert args[-8:] == [
-        sys.executable,
-        "-I",
-        "-m",
-        "powermonitor.live",
-        "--serial",
-        "123",
-        "--plain",
-        "--locked",
-    ]
-    assert {sig: signal.getsignal(sig) for sig in before} == before
+        def __exit__(self, *args):
+            calls.append("unlock")
+
+    monkeypatch.setattr(live, "HardwareLease", Lease)
+    monkeypatch.setattr(live, "make_backend", lambda _: calls.append("backend") or FakeBackend())
+    monkeypatch.setattr("powermonitor.commands.select_device", lambda *_: "TEST")
+    monkeypatch.setattr(live, "monitor", lambda *args: calls.append("monitor") or 0)
+    assert live.main(["--serial", "TEST", "--plain"]) == 0
+    assert calls == ["lock", "backend", "monitor", "unlock"]
 
 
 def test_missing_libusb_fails_before_connect(monkeypatch):
@@ -441,3 +430,18 @@ def test_console_command_is_installed(tmp_path):
     assert result.returncode == 0, result.stderr
     assert "output unchanged" in result.stdout
     assert list(tmp_path.iterdir()) == []
+
+
+def test_live_json_redirects_sdk_sampling_diagnostics(clock, monkeypatch, capsys):
+    import json
+
+    class Noisy(FakeBackend):
+        def sample_batches(self, cancel):
+            print("SDK sampling diagnostic")
+            yield from super().sample_batches(cancel)
+
+    backend = Noisy([batch([0.001])])
+    assert live.monitor(backend, None, 0.2, None, False, True) == 0
+    output = capsys.readouterr()
+    assert json.loads(output.out)["current_a"] == 0.001
+    assert "SDK sampling diagnostic" in output.err

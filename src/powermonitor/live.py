@@ -4,19 +4,22 @@
 from __future__ import annotations
 
 import argparse
+import json
 import math
-import os
 import shutil
 import signal
 import sys
 import time
 from collections import deque
+from collections.abc import Generator
+from contextlib import nullcontext, redirect_stdout
 from threading import Event, Timer
 
 import numpy as np
 
 from powermonitor.backends.base import AcquisitionCancelled, Backend, BackendError
-from powermonitor.models import Quality
+from powermonitor.hardware_lock import DeviceBusy, HardwareLease
+from powermonitor.models import Quality, SampleBatch
 
 
 def trend(values: deque[float]) -> str:
@@ -63,8 +66,27 @@ def waveform(history: deque[tuple[float, float]], columns: int, rows: int) -> li
     return lines
 
 
+def diagnostic_batches(
+    stream: Generator[SampleBatch, None, None],
+    machine: bool,
+) -> Generator[SampleBatch, None, None]:
+    """Keep SDK prints off JSON stdout without redirecting the caller's display."""
+    while True:
+        try:
+            with redirect_stdout(sys.stderr) if machine else nullcontext():
+                batch = next(stream)
+        except StopIteration:
+            return
+        yield batch
+
+
 def monitor(
-    backend: Backend, serial: str | None, interval: float, seconds: float | None, plain: bool
+    backend: Backend,
+    serial: str | None,
+    interval: float,
+    seconds: float | None,
+    plain: bool,
+    machine: bool = False,
 ) -> int:
     cancel = Event()
     stream = None
@@ -72,7 +94,7 @@ def monitor(
     duration_timer: Timer | None = None
     failed = False
     previous_handlers = {}
-    terminal = sys.stdout.isatty()
+    terminal = sys.stdout.isatty() and not machine
     history: deque[tuple[float, float]] = deque(maxlen=100)
     displayed_rows = 0
     plot_screen = False
@@ -83,11 +105,20 @@ def monitor(
     try:
         for signum in (signal.SIGINT, signal.SIGTERM):
             previous_handlers[signum] = signal.signal(signum, stop)
-        device = backend.connect(serial)
-        print(f"HVPM {device.serial} | Ctrl+C to stop | output unchanged", flush=True)
+        if machine:
+            with redirect_stdout(sys.stderr):
+                device = backend.connect(serial)
+        else:
+            device = backend.connect(serial)
+        print(
+            f"HVPM {device.serial} | Ctrl+C to stop | output unchanged",
+            file=sys.stderr if machine else sys.stdout,
+            flush=True,
+        )
         print(
             "I = latest valid sample; avg/peak = since previous refresh; "
             "waveform = I history, auto-scaled",
+            file=sys.stderr if machine else sys.stdout,
             flush=True,
         )
         started = time.monotonic()
@@ -105,7 +136,7 @@ def monitor(
         latest = math.nan
         sampling_requested = True
         stream = backend.sample_batches(cancel)
-        for batch in stream:
+        for batch in diagnostic_batches(stream, machine):
             records = batch.records
             if len(records):
                 flags = records["flags"]
@@ -123,6 +154,26 @@ def monitor(
             now = time.monotonic()
             done = cancel.is_set() or (seconds is not None and now - started >= seconds)
             if now >= refresh or done:
+                if machine:
+                    print(
+                        json.dumps(
+                            {
+                                "elapsed_s": now - started,
+                                "current_a": latest / 1000 if count else None,
+                                "mean_current_a": total / count / 1000 if count else None,
+                                "peak_current_a": peak / 1000 if count else None,
+                                "sample_count": count,
+                                "quality_warning": quality_warning,
+                            },
+                            allow_nan=False,
+                        ),
+                        flush=True,
+                    )
+                    total, count, peak = 0.0, 0, -math.inf
+                    refresh = now + interval
+                    if done:
+                        break
+                    continue
                 if count:
                     line = (
                         f"{now - started:7.1f}s  I {latest:9.3f} mA"
@@ -254,54 +305,27 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--plain", action="store_true", help="numbers only")
     parser.add_argument("--backend", choices=("monsoon", "simulator"), default="monsoon")
-    parser.add_argument("--locked", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--json", action="store_true", help="JSON lines on stdout, no waveform")
     args = parser.parse_args(argv)
     for name, value in (("interval", args.interval), ("seconds", args.seconds)):
         if value is not None and (not math.isfinite(value) or value <= 0):
             parser.error(f"--{name} must be finite and positive")
     try:
-        if args.backend == "monsoon" and not args.locked:
-            hwlock = shutil.which("hwlock")
-            if hwlock is None:
-                report_error("Hardware access requires hwlock; install it before use.")
-                return 1
-            # hwlock 0.1.2 exits early on Ctrl+C. Ignore signals in the lock
-            # wrapper only; monitor installs its own handlers in the child.
-            # Bound the waiting phase, before the child can handle signals.
-            handlers = {
-                signum: signal.signal(signum, signal.SIG_IGN)
-                for signum in (signal.SIGINT, signal.SIGTERM)
-            }
-            forwarded = sys.argv[1:] if argv is None else argv
-            try:
-                os.execv(
-                    hwlock,
-                    [
-                        hwlock,
-                        "exec",
-                        "--resource",
-                        "monsoon-hvpm",
-                        "--label",
-                        f"live-current-{os.getpid()}",
-                        "--timeout",
-                        "2",
-                        "--",
-                        sys.executable,
-                        "-I",
-                        "-m",
-                        "powermonitor.live",
-                        *forwarded,
-                        "--locked",
-                    ],
-                )
-            finally:
-                for signum, handler in handlers.items():
-                    signal.signal(signum, handler)
-        backend = make_backend(args.backend)
+        from powermonitor.commands import select_device
+
+        lease = HardwareLease() if args.backend == "monsoon" else nullcontext()
+        with lease:
+            # SDK diagnostics must not pollute JSON stdout.
+            with redirect_stdout(sys.stderr):
+                backend = make_backend(args.backend)
+                serial = select_device(backend, args.serial)
+            return monitor(backend, serial, args.interval, args.seconds, args.plain, args.json)
+    except DeviceBusy as exc:
+        report_error(str(exc))
+        return 3
     except (BackendError, ImportError, OSError) as exc:
         report_error(f"Live current setup failed: {exc}")
         return 1
-    return monitor(backend, args.serial, args.interval, args.seconds, args.plain)
 
 
 if __name__ == "__main__":

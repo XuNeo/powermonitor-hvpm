@@ -133,6 +133,63 @@ powermonitor --open /path/to/capture.pmcap
 `reset_on_close=False` 才会使用不 reset USB 的清理路径。该路径的重复连接与
 bulk endpoint 释放行为仍需在目标 HVPM、操作系统和 libusb 组合上实机验证。
 
+### 命令行设备控制与录制
+
+不带子命令启动 GUI；以下子命令不加载 Qt。硬件命令默认使用 Monsoon，
+`--backend simulator` 用于无硬件验证。只有一台设备时可以省略 `--serial`，
+零台或多台设备时拒绝自动选择。
+
+```sh
+powermonitor scan --json
+powermonitor status --serial SERIAL --json
+powermonitor output off --serial SERIAL --yes
+powermonitor output on --serial SERIAL --voltage 3.30 --yes
+powermonitor capture --serial SERIAL --seconds 30 --out boot.pmcap --json
+```
+
+**示例电压不代表 DUT 的安全电压；运行供电命令前确认设备可承受、负载安全。**
+
+- `scan/status` 不采样、不写供电设置；`status` 读取固件、协议、启动/运行限流、
+  USB passthrough 和配置电压。`configured_voltage_v` 是设备配置读回，
+  **不是采样电压，也不能证明物理输出已关断**；实际输出状态标为 `unknown`。
+- `output on` 必须明确指定电压（0.80..13.50 V，0.01 V 步进），开启前必须读回 OFF 配置。
+  已有非零配置时拒绝改压，要求先单独执行 `output off`；不会隐藏断电或热切换。
+  写入后校验配置读回，不自动重试。通信失败意味着实际输出状态未知。
+- `output on/off` 默认要求终端输入准确的 `ON 3.30` 或 `OFF`；脚本必须显式传 `--yes`。
+  成功退出只释放主机 USB 资源，不 reset、不反向操作输出；**on 后供电设置保持**。
+  这与 GUI 关闭由自身开启的输出策略不同。
+- `capture` 保持已有输出不变，保存全部原始样本到新 `.pmcap` 目录，不自动导出 CSV。
+  时长含校准，不含连接和锁等待。Ctrl+C 停止并保存已收到的样本，标记 `interrupted`；
+  采样、STOP 或文件写入失败时保留可恢复的录制并标记未完成，不自动重采。
+- 未知丢样告警不丢弃已收到的样本，但重建时间和积分可能不完整；录制完成不等于数据无告警。
+  `capture --json` 的 `warnings`、录制元数据和离线统计都会保留该信息。
+
+GUI 的扫描/连接与全部硬件 CLI 共享 `monsoon-hvpm` 的 `hwlock` 锁。
+GUI 连接期间保持锁；CLI 覆盖完整操作及 USB 清理；模拟器和离线命令不加硬件锁。
+安装 `hwlock` 后可用 `HWLOCK_STATE_DIR` 指定协作域；所有使用者必须使用同一配置。
+锁不会阻止未遵守协议的第三方工具。
+
+### 命令行离线分析与导出
+
+```sh
+powermonitor info boot.pmcap --json
+powermonitor stats boot.pmcap --window 5 10 --json
+powermonitor export boot.pmcap --format csv --out boot.csv
+powermonitor export boot.pmcap --window 5 10 --out selection.csv
+```
+
+离线命令不访问 USB，也不需要 `hwlock`。`info` 显示录制元数据、时间范围、样本数及告警。
+`stats` 使用完整原始样本，输出电流最小/平均/最大值、平均电压/功率、电荷、能量、
+有效时长、覆盖率和质量统计。省略 `--window` 使用完整范围；选区为半开区间 `[START, END)`。
+CSV 保留与选区相交的完整原始样本；默认拒绝覆盖已有文件，不提供自动覆盖开关。
+
+文本统计使用 mA、V、mW、mAh、mWh；JSON 字段使用名字明确的 SI 单位，
+未定义的统计值为 `null`，不输出 NaN。普通命令 `--json` 输出单个对象，
+`live --json` 输出逐刷新 JSON 行；SDK 诊断、确认提示和错误走 stderr。
+
+退出码：`0` 成功（仍可能有数据质量告警）；`1` 依赖、通信或文件操作失败；
+`2` 参数错误；`3` 硬件锁忙/超时；`4` 已保留但未完成的录制。
+
 ### 实时终端电流
 
 无需打开 GUI，也不创建录制文件：
@@ -141,6 +198,7 @@ bulk endpoint 释放行为仍需在目标 HVPM、操作系统和 libusb 组合�
 powermonitor live
 powermonitor live --serial SERIAL --interval 0.2 --seconds 30
 powermonitor live --plain
+powermonitor live --json --seconds 5
 ```
 
 - `I` 为本刷新窗口中最新的有效电流；`avg` 和 `peak` 为自上次刷新以来的有效样本均值和峰值，单位为 mA。
@@ -153,7 +211,7 @@ powermonitor live --plain
 退出先关闭采样流、发送 STOP，STOP 成功后才释放主机 USB 资源；STOP 失败时返回失败，不继续释放。
 它与 GUI 的供电控制行为不同，不会关闭由其他工具开启的输出。
 
-真实设备模式要求系统 libusb、USB 访问权限及 `hwlock` 命令；缺少依赖时失败，不自动安装或回退。
+全部真实设备 CLI 及 GUI 硬件后端要求系统 libusb、USB 访问权限及 `hwlock` 命令；缺少依赖时失败，不自动安装或回退。
 `hwlock` 可用 `uv tool install hwlock` 单独安装。命令自动持有 `monsoon-hvpm` 协作锁，
 锁等待上限为 2 秒；并行使用其他 HVPM 工具时也应使用同一个资源名。
 

@@ -12,7 +12,7 @@ from typing import Any, Callable
 import numpy as np
 
 from powermonitor.backends.base import Backend, BackendError
-from powermonitor.backends.monsoon import MonsoonBackend
+from powermonitor.backends.locked import LockedMonsoonBackend
 from powermonitor.backends.simulator import SimulatorBackend
 from powermonitor.models import (
     SAMPLE_DTYPE,
@@ -38,7 +38,7 @@ class AcquisitionController:
     ) -> None:
         self._backend_factories = backend_factories or {
             "simulator": SimulatorBackend,
-            "monsoon": lambda: MonsoonBackend(reset_on_close=False),
+            "monsoon": LockedMonsoonBackend,
         }
         self._writer_factory = writer_factory
         self._commands: queue.Queue[tuple[str, dict[str, Any]]] = queue.Queue()
@@ -197,7 +197,7 @@ class AcquisitionController:
             try:
                 candidate.disconnect()
             except Exception:
-                pass
+                self._backend = candidate
             raise
         self._backend = candidate
         output = "off" if backend == "simulator" else "unknown"
@@ -404,7 +404,10 @@ class AcquisitionController:
             backend.disconnect()
         except Exception as exc:
             failures.append(f"close failed: {exc}")
-        self._backend = None
+            # Retain a failed USB session and its hardware lease until process
+            # exit; do not advertise the hardware as free while STOP/close failed.
+        else:
+            self._backend = None
         if failures:
             message = "; ".join(failures)
             self._set_state(connection="error", output="unknown", error=message)

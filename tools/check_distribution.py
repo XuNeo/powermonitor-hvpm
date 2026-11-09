@@ -10,7 +10,7 @@ import zipfile
 from pathlib import Path
 
 EXPECTED_NAME = "powermonitor-hvpm"
-EXPECTED_VERSION = "0.1.0"
+EXPECTED_VERSION = "0.2.0"
 CLI_MODULES = {
     "powermonitor/cli.py",
     "powermonitor/live.py",

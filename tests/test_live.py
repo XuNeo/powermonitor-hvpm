@@ -358,7 +358,7 @@ def test_installed_cli_runs_headlessly_without_recordings(entry, tmp_path):
     assert list(tmp_path.iterdir()) == []
 
 
-@pytest.mark.parametrize("sig", [signal.SIGINT, signal.SIGTERM])
+@pytest.mark.parametrize("sig", [signal.SIGINT, signal.SIGTERM, None])
 def test_subprocess_signal_restores_terminal_screen(sig, tmp_path):
     import fcntl
     import pty
@@ -380,13 +380,14 @@ def test_subprocess_signal_restores_terminal_screen(sig, tmp_path):
             "simulator",
             "--interval",
             "0.01",
+            "--seconds",
+            "0.2" if sig is None else "30",
         ],
         cwd=tmp_path,
         stdin=slave,
         stdout=slave,
         stderr=slave,
     )
-    os.close(slave)
     output = b""
     try:
         deadline = time.monotonic() + 5
@@ -396,16 +397,19 @@ def test_subprocess_signal_restores_terminal_screen(sig, tmp_path):
             if ready:
                 output += os.read(master, 4096)
         assert b"\033[?1049h" in output
-        process.send_signal(sig)
-        assert process.wait(timeout=5) == 0
-        while select.select([master], [], [], 0)[0]:
-            try:
-                data = os.read(master, 4096)
-            except OSError:
+        if sig is not None:
+            process.send_signal(sig)
+        # Keep our slave descriptor open until the terminal output is drained:
+        # macOS discards unread master data when the final slave closes. Read
+        # while waiting too, so a full PTY buffer cannot block the child's exit.
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            ready, _, _ = select.select([master], [], [], 0.1)
+            if ready:
+                output += os.read(master, 4096)
+            elif process.poll() is not None:
                 break
-            if not data:
-                break
-            output += data
+        assert process.wait(timeout=1) == 0
         assert b"\033[?1049l" in output
         assert b"Traceback" not in output
         assert list(tmp_path.iterdir()) == []
@@ -413,6 +417,7 @@ def test_subprocess_signal_restores_terminal_screen(sig, tmp_path):
         if process.poll() is None:
             process.kill()
         process.wait(timeout=5)
+        os.close(slave)
         os.close(master)
 
 
